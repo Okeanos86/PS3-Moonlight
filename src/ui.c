@@ -16,6 +16,7 @@
 #include <sysutil/sysutil.h>
 #include <sysutil/osk.h>
 #include <sysutil/msg.h>
+#include <sysutil/video.h>
 #include <unistd.h>
 #include <lv2/systime.h>
 #include "input.h"
@@ -56,8 +57,8 @@ static int ui_vsync = 1; // Default: VSync ON (1)
 #define MAIN_MENU_ITEM_COUNT 3
 static int active_main_item = 0; // 0: Sunshine Host IP, 1: Configure Settings, 2: Connect/Pair
 
-#define SETTINGS_ITEM_COUNT 7
-static int active_settings_item = 0; // 0: FPS, 1: Bitrate, 2: Mouse, 3: VSync, 4: Stats, 5: Verbose, 6: Back
+#define SETTINGS_ITEM_COUNT 9
+static int active_settings_item = 0; // 0: FPS, 1: Bitrate, 2: Mouse, 3: VSync, 4: Stats, 5: Verbose, 6: SD H.Offset, 7: SD H.Shrink, 8: Back
 
 static int frames_drawn_this_sec = 0;
 static int ui_fps_actual = 0;
@@ -65,6 +66,43 @@ static u64 last_ui_time = 0;
 static int show_stats = 0; // Default: Stats OFF (0)
 static int ui_verbose = 0; // Default: Verbose Logging OFF (0)
 static int ui_mouse_mode = 0; // Default: 0 = Game Mode (Relative), 1 = Desktop Mode (Absolute)
+
+// SD (480/576) overscan safe-area fine-tuning. Base values match the
+// original, unpatched repo behavior (no correction at all); the *_adj fields
+// are user adjustments on top of those, clamped to +-15 percentage points so
+// a bad value can't push the picture way off screen.
+#define SD_OFFSET_X_BASE 0
+#define SD_SHRINK_X_BASE 0
+#define SD_ADJ_LIMIT 15
+static int ui_sd_offset_adj = 0; // -15..+15
+static int ui_sd_shrink_adj = 0; // -15..+15
+
+static int ui_is_sd_resolution(void) { return ui_width < 1280; }
+
+static int ui_output_is_hdmi = 0;
+
+static void ui_detect_output_port(void) {
+    videoDeviceInfo devInfo;
+    memset(&devInfo, 0, sizeof(devInfo));
+    if (videoGetDeviceInfo(VIDEO_PRIMARY, 0, &devInfo) == 0) {
+        ui_output_is_hdmi = (devInfo.portType == VIDEO_PORT_HDMI);
+    }
+}
+
+static int ui_sd_correction_enabled(void) {
+    return ui_is_sd_resolution() && !ui_output_is_hdmi;
+}
+
+static int clampi(int v, int lo, int hi) { return (v < lo) ? lo : (v > hi) ? hi : v; }
+
+float ui_get_sd_offset_x(void) {
+    return (float)(SD_OFFSET_X_BASE + ui_sd_offset_adj) / 100.0f;
+}
+
+float ui_get_sd_scale_x(void) {
+    int shrink = SD_SHRINK_X_BASE + ui_sd_shrink_adj;
+    return (float)(100 - shrink) / 100.0f;
+}
 
 // OSK management state
 static sys_mem_container_t osk_container;
@@ -286,6 +324,8 @@ void ui_save_settings(void) {
     fprintf(f, "vsync=%d\n", ui_vsync ? 1 : 0);
     fprintf(f, "stats=%d\n", show_stats ? 1 : 0);
     fprintf(f, "verbose=%d\n", ui_verbose ? 1 : 0);
+    fprintf(f, "sd_offset_adj=%d\n", ui_sd_offset_adj);
+    fprintf(f, "sd_shrink_adj=%d\n", ui_sd_shrink_adj);
 
     for (int i = 0; i < saved_host_count; i++) {
         fprintf(f, "\n[host.%d]\n", i);
@@ -362,6 +402,8 @@ void ui_load_settings(void) {
             else if (strcmp(key, "vsync") == 0) ui_vsync = (atoi(val) != 0);
             else if (strcmp(key, "stats") == 0) show_stats = (atoi(val) != 0);
             else if (strcmp(key, "verbose") == 0) ui_verbose = (atoi(val) != 0);
+            else if (strcmp(key, "sd_offset_adj") == 0) ui_sd_offset_adj = clampi(atoi(val), -SD_ADJ_LIMIT, SD_ADJ_LIMIT);
+            else if (strcmp(key, "sd_shrink_adj") == 0) ui_sd_shrink_adj = clampi(atoi(val), -SD_ADJ_LIMIT, SD_ADJ_LIMIT);
             else if ((strcmp(key, "host_ip") == 0 || strcmp(key, "ip") == 0) && val[0]) {
                 if (saved_host_count == 0) {
                     int i = ui_upsert_saved_host("Saved Host", val);
@@ -624,6 +666,8 @@ void ui_init(int width, int height) {
     scale_x = (float)ui_width / 1280.0f;
     scale_y = (float)ui_height / 720.0f;
     scale_font = (scale_x < scale_y) ? scale_x : scale_y;
+
+    ui_detect_output_port();
 
     sys_mutex_attr_t attr;
     sysMutexAttrInitialize(attr);
@@ -986,10 +1030,14 @@ static void ui_loop(void *arg) {
         } else if (ui_state == UI_STATE_SETTINGS) {
             // Vertical navigation across settings submenu rows
             if (pad.buttons_pressed & UP_FLAG) {
-                active_settings_item = (active_settings_item + SETTINGS_ITEM_COUNT - 1) % SETTINGS_ITEM_COUNT;
+                do {
+                    active_settings_item = (active_settings_item + SETTINGS_ITEM_COUNT - 1) % SETTINGS_ITEM_COUNT;
+                } while (!ui_sd_correction_enabled() && (active_settings_item == 6 || active_settings_item == 7));
             }
             if (pad.buttons_pressed & DOWN_FLAG) {
-                active_settings_item = (active_settings_item + 1) % SETTINGS_ITEM_COUNT;
+                do {
+                    active_settings_item = (active_settings_item + 1) % SETTINGS_ITEM_COUNT;
+                } while (!ui_sd_correction_enabled() && (active_settings_item == 6 || active_settings_item == 7));
             }
             
             if (active_settings_item == 0) {
@@ -1034,6 +1082,26 @@ static void ui_loop(void *arg) {
                     ui_save_settings();
                 }
             } else if (active_settings_item == 6) {
+                // SD Horizontal Offset (only reachable when ui_sd_correction_enabled())
+                if (pad.buttons_pressed & RIGHT_FLAG) {
+                    ui_sd_offset_adj = clampi(ui_sd_offset_adj + 1, -SD_ADJ_LIMIT, SD_ADJ_LIMIT);
+                    ui_save_settings();
+                }
+                if (pad.buttons_pressed & LEFT_FLAG) {
+                    ui_sd_offset_adj = clampi(ui_sd_offset_adj - 1, -SD_ADJ_LIMIT, SD_ADJ_LIMIT);
+                    ui_save_settings();
+                }
+            } else if (active_settings_item == 7) {
+                // SD Horizontal Shrink (only reachable when ui_sd_correction_enabled())
+                if (pad.buttons_pressed & RIGHT_FLAG) {
+                    ui_sd_shrink_adj = clampi(ui_sd_shrink_adj + 1, -SD_ADJ_LIMIT, SD_ADJ_LIMIT);
+                    ui_save_settings();
+                }
+                if (pad.buttons_pressed & LEFT_FLAG) {
+                    ui_sd_shrink_adj = clampi(ui_sd_shrink_adj - 1, -SD_ADJ_LIMIT, SD_ADJ_LIMIT);
+                    ui_save_settings();
+                }
+            } else if (active_settings_item == 8) {
                 // Back to Main Menu
                 if (pad.buttons_pressed & A_FLAG) {
                     ui_save_settings();
@@ -1100,7 +1168,17 @@ static void ui_loop(void *arg) {
         }
 
         // 1. Draw UI / Video (Top 70%)
-        tiny3d_UserViewportSurface(1, (float)ui_width, (float)ui_height);
+        if (ui_sd_correction_enabled()) {
+            const float margin_left_x = ui_get_sd_offset_x();
+            const float scale_x_sd = ui_get_sd_scale_x();
+            const float margin_y = 0.0f;
+            tiny3d_UserViewport(1,
+                ui_width * margin_left_x, ui_height * margin_y,
+                scale_x_sd, 1.0f - 2.0f * margin_y,
+                1.0f, 1.0f);
+        } else {
+            tiny3d_UserViewportSurface(1, (float)ui_width, (float)ui_height);
+        }
         tiny3d_Project2D();
         
         // Ensure transparent alpha blending is active for all 2D text and menu overlays
@@ -1275,10 +1353,23 @@ static void ui_loop(void *arg) {
                 SetFontColor((active_settings_item == 5) ? 0xff82b1ff : 0xffffffff, 0);
                 DrawFormatString(SX(430), SY(280), "[ %s ]", ui_verbose ? "ON" : "OFF");
 
-                // Row 6: Back to Main Menu Button
+                // Row 6/7: SD overscan offset/shrink — shown only on 480/576 over non-HDMI
+                if (ui_sd_correction_enabled()) {
+                    SetFontColor((active_settings_item == 6) ? 0xff82b1ff : 0xffb0bec5, 0);
+                    DrawString(SX(60), SY(315), "SD Horiz. Offset:");
+                    SetFontColor((active_settings_item == 6) ? 0xff82b1ff : 0xffffffff, 0);
+                    DrawFormatString(SX(430), SY(315), "[ %+d%% ]", ui_sd_offset_adj);
+
+                    SetFontColor((active_settings_item == 7) ? 0xff82b1ff : 0xffb0bec5, 0);
+                    DrawString(SX(60), SY(350), "SD Horiz. Shrink:");
+                    SetFontColor((active_settings_item == 7) ? 0xff82b1ff : 0xffffffff, 0);
+                    DrawFormatString(SX(430), SY(350), "[ %+d%% ]", ui_sd_shrink_adj);
+                }
+
+                // Row 8: Back to Main Menu Button
                 SetFontSize(SF(22), SF(22));
-                SetFontColor((active_settings_item == 6) ? 0xff82b1ff : 0xffffffff, 0);
-                DrawString(SX(60), SY(330), "[ BACK TO MAIN MENU ]");
+                SetFontColor((active_settings_item == 8) ? 0xff82b1ff : 0xffffffff, 0);
+                DrawString(SX(60), SY(400), "[ BACK TO MAIN MENU ]");
 
                 // Clean controls legend
                 SetFontSize(SF(18), SF(18));
