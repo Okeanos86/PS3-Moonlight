@@ -16,6 +16,15 @@ static ps3_pad_state_t g_pad_state = {0};
 static sys_mutex_t pad_state_mutex;
 static int pad_state_mutex_initialized = 0;
 
+// Rumble state (set by connection.c callback, applied each input loop iteration)
+static volatile unsigned char rumble_small = 0; // high-freq motor: binary (0=off, non-zero=on)
+static volatile unsigned char rumble_large = 0; // low-freq motor: 0-255
+
+void ps3input_set_rumble(unsigned short low_freq, unsigned short high_freq) {
+    rumble_large = (unsigned char)(low_freq  >> 8); // scale 0-0xFFFF to 0-255
+    rumble_small = (high_freq > 0) ? 1 : 0;         // DualShock 3 small motor is binary
+}
+
 // Mouse state tracking
 static u8 last_mouse_buttons[MAX_MICE] = {0};
 
@@ -265,6 +274,15 @@ static void input_loop(void *arg) {
 
                     // Send controller event to Moonlight/Sunshine server
                     LiSendControllerEvent(buttonFlags, leftTrigger, rightTrigger, leftStickX, leftStickY, rightStickX, rightStickY);
+
+                    // Send controller event to Moonlight/Sunshine server
+                    LiSendControllerEvent(buttonFlags, leftTrigger, rightTrigger, leftStickX, leftStickY, rightStickX, rightStickY);
+
+                    // Apply rumble motors (set by cb_rumble in connection.c)
+                    padActParam act;
+                    act.small_motor = rumble_small; // 0 = off, 1 = on (binary)
+                    act.large_motor = rumble_large; // 0-255 motor speed
+                    ioPadSetActDirect(0, &act);
 
                     // Update shared state for UI
                     sysMutexLock(pad_state_mutex, 0);
