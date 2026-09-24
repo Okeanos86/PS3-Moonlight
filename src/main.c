@@ -248,8 +248,8 @@ int main(int argc, char **argv) {
       // Setup Stream
       STREAM_CONFIGURATION streamConfig;
       LiInitializeStreamConfiguration(&streamConfig);
-      streamConfig.width = 1280;
-      streamConfig.height = 720;
+      streamConfig.width = ui_get_stream_width();
+      streamConfig.height = ui_get_stream_height();
       streamConfig.fps = ui_get_fps(); // Dynamic FPS from UI selection
       streamConfig.bitrate = ui_get_bitrate(); // Dynamic bitrate from UI selection
       streamConfig.packetSize = 1024; // Smaller packets reduce PS3 kernel mbuf pressure

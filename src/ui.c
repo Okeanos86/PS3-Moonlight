@@ -57,8 +57,8 @@ static int ui_vsync = 1; // Default: VSync ON (1)
 #define MAIN_MENU_ITEM_COUNT 3
 static int active_main_item = 0; // 0: Sunshine Host IP, 1: Configure Settings, 2: Connect/Pair
 
-#define SETTINGS_ITEM_COUNT 9
-static int active_settings_item = 0; // 0: FPS, 1: Bitrate, 2: Mouse, 3: VSync, 4: Stats, 5: Verbose, 6: SD H.Offset, 7: SD H.Shrink, 8: Back
+#define SETTINGS_ITEM_COUNT 10
+static int active_settings_item = 0; // 0: 1: Bitrate, 2: Mouse, 3: VSync, 4: Stats, 5: Verbose, 6: SD H.Offset, 7: SD H.Shrink, 8: Stream Res (SD analog), 9: Back
 
 static int frames_drawn_this_sec = 0;
 static int ui_fps_actual = 0;
@@ -67,31 +67,36 @@ static int show_stats = 0; // Default: Stats OFF (0)
 static int ui_verbose = 0; // Default: Verbose Logging OFF (0)
 static int ui_mouse_mode = 0; // Default: 0 = Game Mode (Relative), 1 = Desktop Mode (Absolute)
 
-// SD (480/576) overscan safe-area fine-tuning. Base values match the
-// original, unpatched repo behavior (no correction at all); the *_adj fields
-// are user adjustments on top of those, clamped to +-15 percentage points so
-// a bad value can't push the picture way off screen.
-#define SD_OFFSET_X_BASE 0
-#define SD_SHRINK_X_BASE 0
-#define SD_ADJ_LIMIT 15
-static int ui_sd_offset_adj = 0; // -15..+15
-static int ui_sd_shrink_adj = 0; // -15..+15
-
-static int ui_is_sd_resolution(void) { return ui_width < 1280; }
-
+// SD analog output detection — used to show/hide SD-only settings
 static int ui_output_is_hdmi = 0;
 
 static void ui_detect_output_port(void) {
     videoDeviceInfo devInfo;
     memset(&devInfo, 0, sizeof(devInfo));
-    if (videoGetDeviceInfo(VIDEO_PRIMARY, 0, &devInfo) == 0) {
+    if (videoGetDeviceInfo(VIDEO_PRIMARY, 0, &devInfo) == 0)
         ui_output_is_hdmi = (devInfo.portType == VIDEO_PORT_HDMI);
-    }
 }
 
+// True when PS3 is on SD (< 1280px) analog output.
+// Used to show/hide SD-only settings (stream resolution, overscan correction).
 static int ui_sd_correction_enabled(void) {
-    return ui_is_sd_resolution() && !ui_output_is_hdmi;
+    return (ui_width < 1280) && !ui_output_is_hdmi;
 }
+
+// Stream resolution selection (shown only on SD analog outputs)
+static int ui_res_options[][2] = {{1280, 720}, {960, 544}};
+#define NUM_RES_OPTIONS (int)(sizeof(ui_res_options) / sizeof(ui_res_options[0]))
+static int ui_res_idx = 0; // Default: 1280x720
+
+int ui_get_stream_width(void)  { return ui_res_options[ui_res_idx][0]; }
+int ui_get_stream_height(void) { return ui_res_options[ui_res_idx][1]; }
+
+// SD (480/576) overscan safe-area fine-tuning.
+#define SD_OFFSET_X_BASE 0
+#define SD_SHRINK_X_BASE 0
+#define SD_ADJ_LIMIT 15
+static int ui_sd_offset_adj = 0; // -15..+15
+static int ui_sd_shrink_adj = 0; // -15..+15
 
 static int clampi(int v, int lo, int hi) { return (v < lo) ? lo : (v > hi) ? hi : v; }
 
@@ -324,6 +329,7 @@ void ui_save_settings(void) {
     fprintf(f, "vsync=%d\n", ui_vsync ? 1 : 0);
     fprintf(f, "stats=%d\n", show_stats ? 1 : 0);
     fprintf(f, "verbose=%d\n", ui_verbose ? 1 : 0);
+    fprintf(f, "res_idx=%d\n", ui_res_idx);
     fprintf(f, "sd_offset_adj=%d\n", ui_sd_offset_adj);
     fprintf(f, "sd_shrink_adj=%d\n", ui_sd_shrink_adj);
 
@@ -402,6 +408,7 @@ void ui_load_settings(void) {
             else if (strcmp(key, "vsync") == 0) ui_vsync = (atoi(val) != 0);
             else if (strcmp(key, "stats") == 0) show_stats = (atoi(val) != 0);
             else if (strcmp(key, "verbose") == 0) ui_verbose = (atoi(val) != 0);
+            else if (strcmp(key, "res_idx") == 0) { int v = atoi(val); if (v >= 0 && v < NUM_RES_OPTIONS) ui_res_idx = v; }
             else if (strcmp(key, "sd_offset_adj") == 0) ui_sd_offset_adj = clampi(atoi(val), -SD_ADJ_LIMIT, SD_ADJ_LIMIT);
             else if (strcmp(key, "sd_shrink_adj") == 0) ui_sd_shrink_adj = clampi(atoi(val), -SD_ADJ_LIMIT, SD_ADJ_LIMIT);
             else if ((strcmp(key, "host_ip") == 0 || strcmp(key, "ip") == 0) && val[0]) {
@@ -668,6 +675,9 @@ void ui_init(int width, int height) {
     scale_font = (scale_x < scale_y) ? scale_x : scale_y;
 
     ui_detect_output_port();
+
+    // Reset stream resolution to 1280x720 when not on SD analog output
+    if (!ui_sd_correction_enabled()) ui_res_idx = 0;
 
     sys_mutex_attr_t attr;
     sysMutexAttrInitialize(attr);
@@ -1032,12 +1042,12 @@ static void ui_loop(void *arg) {
             if (pad.buttons_pressed & UP_FLAG) {
                 do {
                     active_settings_item = (active_settings_item + SETTINGS_ITEM_COUNT - 1) % SETTINGS_ITEM_COUNT;
-                } while (!ui_sd_correction_enabled() && (active_settings_item == 6 || active_settings_item == 7));
+                } while (!ui_sd_correction_enabled() && (active_settings_item == 6 || active_settings_item == 7 || active_settings_item == 8));
             }
             if (pad.buttons_pressed & DOWN_FLAG) {
                 do {
                     active_settings_item = (active_settings_item + 1) % SETTINGS_ITEM_COUNT;
-                } while (!ui_sd_correction_enabled() && (active_settings_item == 6 || active_settings_item == 7));
+                } while (!ui_sd_correction_enabled() && (active_settings_item == 6 || active_settings_item == 7 || active_settings_item == 8));
             }
             
             if (active_settings_item == 0) {
@@ -1102,6 +1112,16 @@ static void ui_loop(void *arg) {
                     ui_save_settings();
                 }
             } else if (active_settings_item == 8) {
+                // Stream Resolution (only reachable on SD analog outputs)
+                if ((pad.buttons_pressed & A_FLAG) || (pad.buttons_pressed & RIGHT_FLAG)) {
+                    ui_res_idx = (ui_res_idx + 1) % NUM_RES_OPTIONS;
+                    ui_save_settings();
+                }
+                if (pad.buttons_pressed & LEFT_FLAG) {
+                    ui_res_idx = (ui_res_idx + NUM_RES_OPTIONS - 1) % NUM_RES_OPTIONS;
+                    ui_save_settings();
+                }
+            } else if (active_settings_item == 9) {
                 // Back to Main Menu
                 if (pad.buttons_pressed & A_FLAG) {
                     ui_save_settings();
@@ -1133,9 +1153,9 @@ static void ui_loop(void *arg) {
             }
             // Circle button returns to main menu
             if (pad.buttons_pressed & B_FLAG) {
-				app_selection_confirmed = 0;
-				ui_state = UI_STATE_IP_ENTRY;
-			}
+                app_selection_confirmed = 0;
+                ui_state = UI_STATE_IP_ENTRY;
+            }
         } else if (ui_state == UI_STATE_DISCOVERY) {
             if (discovery_scanned) {
                 int total_rows = discovered_host_count + 1;
@@ -1324,7 +1344,7 @@ static void ui_loop(void *arg) {
                 } else {
                     DrawFormatString(SX(430), SY(140), "[ %.1f Mbps ]", (float)kbps / 1000.0f);
                 }
-
+                
                 // Row 2: Mouse Mode
                 SetFontColor((active_settings_item == 2) ? 0xff82b1ff : 0xffb0bec5, 0);
                 DrawString(SX(60), SY(175), "Mouse Mode:");
@@ -1366,10 +1386,19 @@ static void ui_loop(void *arg) {
                     DrawFormatString(SX(430), SY(350), "[ %+d%% ]", ui_sd_shrink_adj);
                 }
 
-                // Row 8: Back to Main Menu Button
+                // Row 8: Stream Resolution — shown only on 480/576 over non-HDMI
+                if (ui_sd_correction_enabled()) {
+                    SetFontColor((active_settings_item == 8) ? 0xff82b1ff : 0xffb0bec5, 0);
+                    DrawString(SX(60), SY(385), "Stream Resolution:");
+                    SetFontColor((active_settings_item == 8) ? 0xff82b1ff : 0xffffffff, 0);
+                    DrawFormatString(SX(430), SY(385), "[ %dx%d ]",
+                        ui_res_options[ui_res_idx][0], ui_res_options[ui_res_idx][1]);
+                }
+
+                // Row 9: Back to Main Menu Button
                 SetFontSize(SF(22), SF(22));
-                SetFontColor((active_settings_item == 8) ? 0xff82b1ff : 0xffffffff, 0);
-                DrawString(SX(60), SY(400), "[ BACK TO MAIN MENU ]");
+                SetFontColor((active_settings_item == 9) ? 0xff82b1ff : 0xffffffff, 0);
+                DrawString(SX(60), SY(420), "[ BACK TO MAIN MENU ]");
 
                 // Clean controls legend
                 SetFontSize(SF(18), SF(18));
@@ -1547,7 +1576,7 @@ static void ui_loop(void *arg) {
                 SetFontSize(SF(18), SF(18));
                 SetFontColor(0xff9e9e9e, 0);
                 DrawString(SX(60), SY(445), "\x05 Navigate   |   \x01 Select   |   \x02 Back");
-			} else if (ui_state == UI_STATE_ERROR) {
+            } else if (ui_state == UI_STATE_ERROR) {
                 SetFontSize(SF(26), SF(26));
                 SetFontColor(0xffff5252, 0);
                 DrawString(SX(60), SY(200), "ERROR: Target unreachable or Pairing failed.");
