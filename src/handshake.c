@@ -1241,7 +1241,7 @@ static int build_launch_params(char *path, size_t pathsz,
 }
 
 // Send /cancel to end any existing session
-static void hv_cancel(handshake_info_t *info) {
+int hv_cancel(handshake_info_t *info) {
     char path[512];
     struct string s = {0};
     char uuid_str[40];
@@ -1252,6 +1252,7 @@ static void hv_cancel(handshake_info_t *info) {
         NLOG("Cancel response: %.200s", s.ptr ? s.ptr : "");
     }
     free(s.ptr);
+    return 0;
 }
 
 // Parse session URL from response and store in info

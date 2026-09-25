@@ -54,8 +54,8 @@ static int ui_bitrate_idx = 2; // Default: 10 Mbps (Maximum)
 static int ui_vsync = 1; // Default: VSync ON (1)
 
 // Navigation item counts for Main Menu and Settings Submenu
-#define MAIN_MENU_ITEM_COUNT 3
-static int active_main_item = 0; // 0: Sunshine Host IP, 1: Configure Settings, 2: Connect/Pair
+#define MAIN_MENU_ITEM_COUNT 4
+static int active_main_item = 0; // 0: Sunshine Host IP, 1: Configure Settings, 2: Connect/Pair, 3: Disconnect (session only)
 
 #define SETTINGS_ITEM_COUNT 10
 static int active_settings_item = 0; // 0: 1: Bitrate, 2: Mouse, 3: VSync, 4: Stats, 5: Verbose, 6: SD H.Offset, 7: SD H.Shrink, 8: Stream Res (SD analog), 9: Back
@@ -66,6 +66,11 @@ static u64 last_ui_time = 0;
 static int show_stats = 0; // Default: Stats OFF (0)
 static int ui_verbose = 0; // Default: Verbose Logging OFF (0)
 static int ui_mouse_mode = 0; // Default: 0 = Game Mode (Relative), 1 = Desktop Mode (Absolute)
+
+// Session state: set when a stream has been active in the current session
+static volatile int session_was_active = 0;
+void ui_set_session_active(int active) { session_was_active = active ? 1 : 0; }
+int  ui_is_session_active(void) { return session_was_active; }
 
 // SD analog output detection — used to show/hide SD-only settings
 static int ui_output_is_hdmi = 0;
@@ -1001,10 +1006,14 @@ static void ui_loop(void *arg) {
             if (!osk_active && !msg_dialog_active) {
                 // Vertical navigation across main menu rows
                 if (pad.buttons_pressed & UP_FLAG) {
-                    active_main_item = (active_main_item + MAIN_MENU_ITEM_COUNT - 1) % MAIN_MENU_ITEM_COUNT;
+                    do {
+                        active_main_item = (active_main_item + MAIN_MENU_ITEM_COUNT - 1) % MAIN_MENU_ITEM_COUNT;
+                    } while (!session_was_active && active_main_item == 3);
                 }
                 if (pad.buttons_pressed & DOWN_FLAG) {
-                    active_main_item = (active_main_item + 1) % MAIN_MENU_ITEM_COUNT;
+                    do {
+                        active_main_item = (active_main_item + 1) % MAIN_MENU_ITEM_COUNT;
+                    } while (!session_was_active && active_main_item == 3);
                 }
                 
                 // Action handling per main menu item
@@ -1024,6 +1033,11 @@ static void ui_loop(void *arg) {
                     // Connect / Pair action button
                     if (pad.buttons_pressed & A_FLAG) {
                         ui_state = UI_STATE_PAIRING;
+                    }
+                } else if (active_main_item == 3 && session_was_active) {
+                    // Disconnect from host (only available after an active stream session)
+                    if (pad.buttons_pressed & A_FLAG) {
+                        ui_state = UI_STATE_DISCONNECT;
                     }
                 }
                 
@@ -1314,6 +1328,13 @@ static void ui_loop(void *arg) {
                 SetFontSize(SF(24), SF(24));
                 SetFontColor((active_main_item == 2) ? 0xff82b1ff : 0xffffffff, 0);
                 DrawString(SX(60), SY(280), "[ CONNECT / PAIR TO HOST ]");
+
+                // Row 3: Disconnect (visible only after an active stream session)
+                if (session_was_active) {
+                    SetFontSize(SF(24), SF(24));
+                    SetFontColor((active_main_item == 3) ? 0xffff5252 : 0xffcf6679, 0);
+                    DrawString(SX(60), SY(330), "[ DISCONNECT FROM HOST ]");
+                }
 
                 // Clean controls legend
                 SetFontSize(SF(18), SF(18));

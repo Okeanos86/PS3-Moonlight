@@ -35,6 +35,7 @@ int hv_get_app_list(handshake_info_t *info, ps3_app_list_t *list);
 int hv_is_paired(handshake_info_t *info);
 int hv_pair(handshake_info_t *info, const char *pin);
 int hv_launch(handshake_info_t *info, int app_id, const char *rikey, int rikeyid);
+int hv_cancel(handshake_info_t *info);
 
 // Internal helpers (could be exposed if needed)
 int hv_generate_credentials(handshake_info_t *info);

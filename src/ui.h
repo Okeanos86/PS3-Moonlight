@@ -12,7 +12,8 @@ enum {
     UI_STATE_APPLIST,
     UI_STATE_STREAMING,
     UI_STATE_ERROR,
-    UI_STATE_DISCOVERY
+    UI_STATE_DISCOVERY,
+    UI_STATE_DISCONNECT
 };
 
 void ui_init(int width, int height);
@@ -73,5 +74,9 @@ int  ui_wants_manual_entry(void);
 int  ui_get_selected_host_ip(char *out, size_t out_size);
 int  ui_get_selected_host_name(char *out, size_t out_size);
 void ui_reset_host_selection(void);
+
+// Session state: true after a stream has been active this session
+void ui_set_session_active(int active);
+int  ui_is_session_active(void);
 
 #endif

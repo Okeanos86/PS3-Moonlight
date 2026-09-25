@@ -76,7 +76,20 @@ int main(int argc, char **argv) {
   ps3input_start();
   NLOG("Moonlight PS3 UI Initialized");
   
+  /* hinfo is declared here outside the loop to make it accessible
+   * to the UI_STATE_DISCONNECT handler after the stream ends. */
+  handshake_info_t hinfo = {0};
+
   while (ui_is_running()) {
+    if (ui_get_state() == UI_STATE_DISCONNECT) {
+      NLOG("Disconnect requested. Sending /cancel to Sunshine...");
+      int cancel_result = hv_cancel(&hinfo);
+      NLOG("hv_cancel result: %d", cancel_result);
+      ui_set_session_active(0);
+      ui_set_state(UI_STATE_IP_ENTRY);
+      continue;
+    }
+
     if (ui_get_state() == UI_STATE_DISCOVERY) {
       NLOG("Discovery: searching for Sunshine via mDNS...");
       mld_host_t hosts[MLD_MAX_HOSTS];
@@ -130,7 +143,7 @@ int main(int argc, char **argv) {
 
       // Handshake
       NLOG("H: Initializing Handshake...");
-      handshake_info_t hinfo = {0};
+      memset(&hinfo, 0, sizeof(hinfo));
       /* Pass the saved host name to keep the cert file stable
        * even when the IP changes due to DHCP. */
       const ui_saved_host_t *saved = ui_get_saved_host(ui_get_selected_host_index());
@@ -286,6 +299,7 @@ int main(int argc, char **argv) {
 
         if (ui_is_running() && connection_is_connected()) {
           NLOG("Connection fully established!");
+          ui_set_session_active(1);
           while (ui_is_running() && connection_is_ready() && ui_get_state() == UI_STATE_STREAMING) {
             sysUtilCheckCallback();
             
@@ -308,6 +322,8 @@ int main(int argc, char **argv) {
         
         NLOG("Returning to Main Menu.");
         LiStopConnection();
+        /* session_was_active remains true: the user can still
+         * use DISCONNECT from the menu to send /cancel to Sunshine */
         ui_set_state(UI_STATE_IP_ENTRY);
       } else {
         NLOG("LiStartConnection failed: %d", ret);
