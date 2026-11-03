@@ -1,4 +1,4 @@
-PS3DEV ?= /mnt/nvme1n1p1/Build/ps3dev
+PS3DEV ?= $(abspath ../../ps3dev)
 
 SPU_CC  := $(PS3DEV)/spu/bin/spu-gcc
 SPU_AR  := $(PS3DEV)/spu/bin/spu-ar

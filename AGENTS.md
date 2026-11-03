@@ -57,10 +57,9 @@ PlayStation 3 client for Moonlight Game Streaming protocol (NVIDIA Shield / Suns
   - PPE: 64-bit hardware Time Base register (`mftb` / `__gettime()`) ticking at 79.8 MHz (~12.53 ns resolution) with 0 syscall overhead.
   - SPE: Hardware SPU Decrementer down-counter ticking synchronously at 79.8 MHz. Maintained entirely within ~1 KB Local Store memory table (`SpuPerfTable`), using 0 MFC DMA commands and causing zero tag collisions.
   - Transparent Bridge: PPE queries SPU Local Store via `sysSpuThreadReadLocalStorage` during `ps3perf_tick(5)`, multiplexing PPE and SPU metrics over UDP port 18195.
-- **Two-Tier PKG Packaging Pipeline**:
-  - `make all` concurrently generates two packages:
-    1. Standard Release (`build/moonlight-ps3-$(TIMESTAMP).pkg`) with uninstrumented SPU Opus kernel.
-    2. Autonomous Debug & Profiler (`build/moonlight-ps3-debug-$(TIMESTAMP).pkg`) linking `libps3perf.a` and `libps3perf_spu.a` with `sfo_debug.xml` (`Moonlight PS3 (Debug)`).
+- **Two-Tier PKG Packaging Pipeline (Decoupled & Optional Debug)**:
+  - Standard Release (`make` / `make all` / `make pkg`): Generates `build/moonlight-ps3-$(TIMESTAMP).pkg` independently without requiring external `PS3-Debug-Toolkit` or `ps3perf` headers/libraries. Inlined no-op fallback stubs ensure clean compilation when `ENABLE_PS3PERF` is unset.
+  - Autonomous Debug & Profiler (`make debugpkg`): Optional target verifying toolkit dependencies (`check_debug_deps`) and generating `build/moonlight-ps3-debug-$(TIMESTAMP).pkg` linked against `libps3perf.a` and `libps3perf_spu.a` with `sfo_debug.xml` (`Moonlight PS3 (Debug)`).
 - **ps3perf CLI Telemetry Suite (`ps3perf.py` / `tools/ps3perf.py`)**:
   - `ps3perf record [-p 18195] [-o ps3perf.data]`: Captures live UDP telemetry from the console into an offline data file.
   - `ps3perf report -pkgdir=build/moonlight-ps3-debug.unstripped.elf --spu-elf=src/spu/spu_opus.elf [-i ps3perf.data]`: Resolves PPE `.opd` symbols and SPU Local Store addresses, outputting Linux `perf report`-style multi-core overhead tables (Overhead %, Total ms, Calls, Avg us, Symbol, File:Line).

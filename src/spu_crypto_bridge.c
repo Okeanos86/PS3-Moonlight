@@ -28,7 +28,19 @@
 #include "spu_crypto_bridge.h"
 #include "spu_crypto.h"
 #include "net_logger.h"
+#if defined(ENABLE_PS3PERF) && (ENABLE_PS3PERF != 0)
 #include <ps3perf.h>
+#else
+/* Fallback no-op stubs when PS3-Debug-Toolkit is not enabled or not installed */
+static inline int ps3perf_register_spu(sys_spu_thread_t thread, const void *spu_elf) {
+    (void)thread;
+    (void)spu_elf;
+    return 0;
+}
+static inline void ps3perf_unregister_spu(sys_spu_thread_t thread) {
+    (void)thread;
+}
+#endif
 
 #define SPU_CRYPTO_BOUNCE_SIZE     16384 /* 16 KB bounce buffer for DMA */
 #define SPU_CRYPTO_TIMEOUT_TB      8000000ULL /* ~100 ms at 79.8 MHz timebase */

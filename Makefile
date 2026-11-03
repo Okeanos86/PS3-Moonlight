@@ -1,12 +1,10 @@
-ifneq ($(wildcard $(CURDIR)/ps3dev),)
+# -----------------------------------------------------------------------------
+# PS3 Toolchain & SDK Configuration
+# -----------------------------------------------------------------------------
+# Varsayılan kabul: Önceden derlenmiş SDK arşivi proje ana dizinine açılır (./ps3dev).
+# İsteğe bağlı olarak PS3DEV ortam değişkeni ile geçersiz kılınabilir.
+# -----------------------------------------------------------------------------
 export PS3DEV	?= $(CURDIR)/ps3dev
-else ifneq ($(wildcard /home/cruslan/Templates/Projects/upstream-sdk/ps3dev),)
-export PS3DEV	?= /home/cruslan/Templates/Projects/upstream-sdk/ps3dev
-else ifneq ($(wildcard /home/cruslan/Templates/Projects/ps3dev),)
-export PS3DEV	?= /home/cruslan/Templates/Projects/ps3dev
-else
-export PS3DEV	?= /mnt/nvme1n1p1/Build/ps3dev
-endif
 export PSL1GHT	?= $(PS3DEV)
 
 TITLE		:= Moonlight PS3
@@ -62,8 +60,8 @@ DEBUG_LIBS		:= -Wl,--whole-archive -L./third_party/moonlight-common-c -lmoonligh
 
 BUILDDIR		:= $(CURDIR)/$(BUILD)
 
-# Default target: builds both retail and debug packages
-all: pkg debugpkg
+# Default target: builds Retail Release PKG
+all: pkg
 
 LIBCOMMON		:= third_party/moonlight-common-c/libmoonlight-common-c.a
 LIBOPUS			:= third_party/opus/libopus.a
@@ -91,7 +89,7 @@ $(LIBOPUS): FORCE
 $(TARGET).elf: $(RETAIL_OFILES) $(SPU_RETAIL_OBJ) $(LIBCOMMON) $(LIBOPUS)
 	$(CC) $(RETAIL_OFILES) $(SPU_RETAIL_OBJ) $(LDFLAGS) $(RETAIL_LIBS) -o $@
 
-$(TARGET_DEBUG).elf: $(DEBUG_OFILES) $(SPU_DEBUG_OBJ) $(LIBCOMMON) $(LIBOPUS)
+$(TARGET_DEBUG).elf: check_debug_deps $(DEBUG_OFILES) $(SPU_DEBUG_OBJ) $(LIBCOMMON) $(LIBOPUS)
 	$(CC) $(DEBUG_OFILES) $(SPU_DEBUG_OBJ) $(DEBUG_LDFLAGS) $(DEBUG_LIBS) -o $@
 
 -include $(RETAIL_OFILES:.o=.d)
@@ -112,8 +110,19 @@ pkg: $(OUT_PKG)
 	@echo "  [Release Package] $(OUT_PKG)"
 	@echo "=========================================================="
 
-# Build only Autonomous Debug & Profiler PKG
-debugpkg: $(OUT_DEBUG_PKG)
+# Dependency verification for Autonomous Debug & Profiler PKG
+check_debug_deps:
+	@if [ ! -f "$(PS3DEV)/portlibs/ppu/lib/libps3perf.a" ] || [ ! -f "$(PS3DEV)/portlibs/ppu/include/ps3perf.h" ] || [ ! -f "$(PS3DEV)/spu/lib/libps3perf_spu.a" ]; then \
+		echo "=========================================================="; \
+		echo "HATA: 'debugpkg' hedefi icin PS3-Debug-Toolkit gereklidir."; \
+		echo "Gerekli kutuphaneler ($(PS3DEV)/portlibs/ppu/lib/libps3perf.a) bulunamadi."; \
+		echo "Lutfen PS3-Debug-Toolkit projesini kurun veya sadece standart 'make' / 'make pkg' calistirin."; \
+		echo "=========================================================="; \
+		exit 1; \
+	fi
+
+# Build only Autonomous Debug & Profiler PKG (Optional)
+debugpkg: check_debug_deps $(OUT_DEBUG_PKG)
 	@echo "=========================================================="
 	@echo "Debug Package successfully generated:"
 	@echo "  [Debug Package]   $(OUT_DEBUG_PKG)"
@@ -146,8 +155,9 @@ $(OUT_DEBUG_PKG): $(TARGET_DEBUG).elf
 
 clean:
 	@echo "Cleaning build artifacts and temporary files safely..."
-	gio trash src/*.o src/*.d $(TARGET).elf $(TARGET).self $(TARGET).fake.self $(TARGET_DEBUG).elf $(TARGET).pkg 2>/dev/null || true
-	gio trash $(BUILD) 2>/dev/null || true
+	@mkdir -p .trash
+	gio trash src/*.o src/*.d $(TARGET).elf $(TARGET).self $(TARGET).fake.self $(TARGET_DEBUG).elf $(TARGET).pkg 2>/dev/null || mv src/*.o src/*.d $(TARGET).elf $(TARGET).self $(TARGET).fake.self $(TARGET_DEBUG).elf $(TARGET).pkg .trash/ 2>/dev/null || true
+	gio trash $(BUILD) 2>/dev/null || mv $(BUILD) .trash/build_trash_$$$$ 2>/dev/null || true
 	$(MAKE) -C third_party/moonlight-common-c -f Makefile.ps3 clean CC=$(abspath $(PS3DEV))/ppu/bin/ppu-gcc AR=$(abspath $(PS3DEV))/ppu/bin/ppu-ar 2>/dev/null || true
 	$(MAKE) -C third_party/opus -f Makefile.unix clean 2>/dev/null || true
 	$(MAKE) -C src/spu clean 2>/dev/null || true
@@ -187,4 +197,4 @@ prepare:
 	echo "Project is ready to build. Run 'make' to compile."; \
 	echo "=========================================================="
 
-.PHONY: all clean pkg debugpkg prepare FORCE
+.PHONY: all clean pkg debugpkg check_debug_deps prepare FORCE

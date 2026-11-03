@@ -1,22 +1,22 @@
 # Moonlight PS3
 
-Moonlight PS3 is an open-source PlayStation 3 homebrew client for NVIDIA GameStream and Sunshine servers, built using the PSL1GHT SDK, Tiny3D graphics engine, FreeType 2 vector font renderer, `cellVdec` hardware decoder interface, and Opus audio decoding pipeline.
+Moonlight PS3 is an open-source PlayStation 3 client for NVIDIA GameStream and Sunshine game streaming servers. Built using the open-source PSL1GHT SDK toolchain, Tiny3D graphics engine, FreeType 2 vector font renderer, `cellVdec` hardware video decoding pipeline, and a dedicated SPU Opus audio offloading architecture, Moonlight PS3 brings modern low-latency game streaming to physical PlayStation 3 hardware (CFW / PS3HEN) and the RPCS3 emulator.
 
 ---
 
-## Features
+## Key Features
 
-- **Hardware-Accelerated H.264 Video Decoding**: High-performance H.264 video decoding utilizing the PS3 Cell Broadband Engine `cellVdec` hardware decoder (allocated 5 dedicated SPE cores for CAVLC/CABAC and macroblock reconstruction), mapped directly to RSX graphics memory via Tiny3D zero-copy IOMMU mappings.
-- **Clock Drift Elimination & Enhanced Host Frame Pacing**: Resolves the exact 60.000 Hz vs 59.940 Hz NTSC clock drift (1 extra frame every 16.68s) via 3 synchronized layers:
-  - Protocol-level refresh negotiation (`clientRefreshRateX100 = 5994` for NTSC / `5000` for PAL) locking host Sunshine/GFE capture timers directly to PS3 display hardware.
+- **Hardware-Accelerated H.264 Video Decoding (`cellVdec`)**: Direct hardware decoding utilizing Sony's Cell Broadband Engine `libvdec` hardware subsystem (allocating 5 dedicated SPE cores for CAVLC/CABAC entropy parsing and parallel macroblock reconstruction), mapped directly to RSX graphics memory via zero-copy IOMMU mappings.
+- **Dedicated SPU Opus Audio Offloading (`spu_opus`)**: Offloads Opus multistream audio decoding and 16-to-32-bit float PCM vector conversion to a dedicated Synergistic Processing Unit (SPE) worker thread. Paired with 5 SPEs for video decoding, all 6 usable GameOS SPEs are fully utilized with 0 host CPU audio overhead.
+- **Clock Drift Elimination & Host Pacing**: Resolves the exact $60.000\text{ Hz}$ PC host vs $59.940\text{ Hz}$ PS3 NTSC clock frequency delta ($1\text{ extra frame}$ every $16.68\text{ seconds}$) across three synchronized tiers:
+  - Protocol-level refresh negotiation (`clientRefreshRateX100 = 5994` for NTSC / `5000` for PAL), locking Sunshine/GFE host capture timers directly to the PS3 display hardware.
   - Zero-latency RSX presentation drain: snaps immediately to the freshest decoded frame on VBlank when multiple frames are queued, permanently locking display input latency to 0–16 ms without breaking H.264 GOP references.
-  - Sized depacketizer queue (`decodeUnitQueue = 4`) preventing multi-second buffer bloat and freeing ~4.8 MB of heap RAM.
-- **Hardware Flush-to-Zero (Non-IEEE `FPSCR[NI]`) Optimization**: Activates hardware Flush-to-Zero (FTZ) on the Cell PPE main and audio threads (`mtfsb1 29`), eliminating high-latency microcode assist interrupt traps when audio signals decay to silence or floating-point statistics approach subnormal thresholds ($0 < |x| < 1.17 \times 10^{-38}$).
+  - Sized depacketizer queue (`decodeUnitQueue = 4`) preventing multi-second buffer bloat and reclaiming ~4.8 MB of heap RAM.
+- **Cell PPE Hardware Flush-to-Zero (`FPSCR[NI]`) Optimization**: Hardware Flush-to-Zero (FTZ) enabled on the Cell PPE main and audio threads (`mtfsb1 29`), eliminating high-latency microcode assist interrupt traps when audio signals decay to silence or floating-point statistics approach subnormal thresholds ($0 < |x| < 1.17 \times 10^{-38}$).
 - **Elastic 6-Buffer RSX Texture Pool**: Expanded frame buffer queue (`VDEC_FRAME_COUNT = 6`) providing elastic jitter absorption between VDEC decoding and RSX presentation, accompanied by clean `DR_NEED_IDR` recovery on hardware queue saturation.
-- **Dedicated SPU Opus Audio Offloader (`spu_opus`)**: Offloads Opus multistream audio decoding and 16-to-32-bit float PCM scaling to a dedicated Synergistic Processing Unit (SPE) worker thread. Along with 5 SPEs for VDEC H.264 decoding, achieves 100% utilization of all 6 usable GameOS SPEs with zero host CPU audio decode overhead.
 - **Adaptive RSX Scaling Engine (AMD CAS & 4-Tap Area Box)**:
-  - **AMD Contrast-Adaptive Sharpening (CAS)**: 5-tap unsharp mask shader for clean upscaling (e.g. 720p -> 1080p) without edge ringing or halos.
-  - **4-Tap Bilinear Box Downsampler**: 16-texel area-averaging shader suppressing moire and flicker on high-contrast text when downscaling (e.g. 1024x768/800x600 -> 480p/576p CRT modes).
+  - **AMD Contrast-Adaptive Sharpening (CAS)**: 5-tap unsharp mask shader for pristine upscaling (e.g. 720p -> 1080p) without edge ringing or halos.
+  - **4-Tap Bilinear Box Downsampler**: 16-texel area-averaging shader suppressing moire and flicker on high-contrast text when downscaling (e.g. 1024x768/800x600 PC resolutions -> 480p/576p CRT modes).
   - **Native 4:3 Display Support**: Automatic hardware aspect ratio detection (`VIDEO_ASPECT_4_3` vs `VIDEO_ASPECT_16_9`) with filtered resolution menus and anamorphic aspect ratio correction.
 - **Full USB & Bluetooth Keyboard and Mouse Support**:
   - **Dual Mouse Modes**: Supports both **Game Mode** (unbounded relative delta motion for 3D camera control) and **Desktop Mode** (high-precision 1:1 absolute coordinate motion for desktop navigation), configurable in the Stream Settings menu.
@@ -27,9 +27,7 @@ Moonlight PS3 is an open-source PlayStation 3 homebrew client for NVIDIA GameStr
 - **Persistent Configuration Engine**: Automatically saves and restores Sunshine Host IP, target FPS (30/60), bitrate (2.5, 5.0, 10.0, 12.5, 15.0 Mbps), scaling mode (Adaptive Shader / Legacy), mouse mode (Game/Desktop), RSX VSync mode, HUD stats visibility, and verbose logging across console reboots in `/dev_hdd0/game/MNLT00001/USRDIR/config.ini`.
 - **High-Fidelity FreeType 2 Font Rendering**: Dynamically loads official PlayStation 3 console vector fonts (`SCE-PS3-RD-R-LATIN.TTF`, `SCE-PS3-SR-R-LATIN.TTF`) from `/dev_flash/data/font/` with subpixel anti-aliasing, accompanied by custom procedural vector PlayStation button glyphs (Cross ✕, Circle ◯, Triangle △, Square ◻, D-Pad ↕).
 - **Zero-Overhead RSX Hardware VSync & Telemetry HUD**: Flexible flip mode configuration (`GCM_FLIP_VSYNC` for tear-free 60Hz or `GCM_FLIP_HSYNC` for ultra-low latency) paired with an on-screen Performance Stats HUD that introduces zero CPU/GPU overhead when disabled.
-- **Low-Latency Opus Multistream Audio Backend**: Custom PS3 audio backend featuring thread-safe ring buffering, low-latency 48kHz PCM playback via `sysAudio`, and automatic buffer recovery.
-- **On-Screen Pairing PIN Modal**: Clean, dedicated visual badge presenting the dynamically generated 4-digit PIN for instant authorization in the Sunshine Web UI.
-- **Universal NPDRM Package Build Pipeline**: Native `ppu-strip`, `fself`, and `make_self_npdrm` integration generating retail-signed PKG files compatible with both RPCS3 emulator and physical PS3 consoles (CFW / HEN).
+- **Universal NPDRM Retail Package Build Pipeline**: Native `ppu-strip`, `sprxlinker`, and `make_self_npdrm` integration generating retail-signed standalone PKG files compatible with both RPCS3 emulator and physical PS3 consoles (CFW / HEN).
 
 ---
 
@@ -46,7 +44,7 @@ Moonlight PS3 is an open-source PlayStation 3 homebrew client for NVIDIA GameStr
 
 ---
 
-## Quick Start & Building from Source
+## Building from Source (Retail Release Package)
 
 ### 1. Clone the Repository
 ```bash
@@ -55,52 +53,71 @@ cd PS3-Moonlight
 ```
 
 ### 2. Prepare the PS3 SDK Environment
-Automatically downloads and extracts the pre-compiled `ps3dev` SDK and PSL1GHT toolchain for your host OS (macOS ARM64/x64 or Linux x64) into `./ps3dev`:
+Download and extract the prebuilt official `ps3dev` SDK and PSL1GHT toolchain for your host operating system (macOS ARM64/x64 or Linux x64) directly into the project root directory (`./ps3dev`):
 ```bash
 make prepare
 ```
+*(Note: If you already have a system-wide PS3 toolchain installed, you can simply export `export PS3DEV=/path/to/ps3dev` instead).*
 
-### 3. Build the Packages
-Compile the client binary and generate the signed installation packages:
+### 3. Compile the Retail Package
+Build the optimized standalone Retail Release package:
 ```bash
 make
+# or explicitly:
+make pkg
 ```
 
-### 4. Output Packages
-Upon completion, the build outputs the following installable files in `build/`:
-- `moonlight-ps3.pkg`: Standard package installer for physical PS3 consoles (CFW / HEN) and RPCS3 emulator.
-- `moonlight-ps3.gnpdrm.pkg`: Finalized Retail NPDRM signed package.
+### 4. Output Package
+Upon completion, the build outputs the standalone signed package in the `build/` directory:
+- `build/moonlight-ps3-<TIMESTAMP>.pkg`: Signed Retail NPDRM package ready for installation on any physical PS3 (CFW or PS3HEN) and RPCS3 emulator.
+
+*(To clean build artifacts safely, run `make clean`).*
 
 ---
 
 ## Installation & Pairing
 
-1. Copy `moonlight-ps3.pkg` (or `moonlight-ps3.gnpdrm.pkg`) to the root of a FAT32 formatted USB drive.
-2. Insert the USB drive into your jailbroken PS3 (CFW or PS3HEN).
-3. On the PS3 XMB, navigate to **Game > Package Manager > Install Package Files > Standard** and install the PKG.
+1. Copy the generated `moonlight-ps3-*.pkg` file to the root of a FAT32-formatted USB drive.
+2. Plug the USB drive into your jailbroken PlayStation 3 console (running CFW or PS3HEN).
+3. On the PS3 XMB, navigate to **Game > Package Manager > Install Package Files > Standard** and select the package to install.
 4. Launch **Moonlight PS3** from your XMB Game column.
-5. Select the Sunshine Host IP row to enter your PC's IP address using the native PS3 On-Screen Keyboard.
-6. Select **Connect / Pair to Host**. Enter the 4-digit PIN shown on screen into the Sunshine Web UI under **PIN**.
-7. Once paired, select your desired game or desktop application from the interactive App List menu to begin streaming!
+5. Select the **Host IP** row and enter your Sunshine/GameStream host PC's IP address using the native PS3 On-Screen Keyboard.
+6. Select **Connect / Pair to Host**. A dedicated modal will display a 4-digit PIN.
+7. Open the Sunshine Web UI on your PC, navigate to the **PIN** tab, and enter the 4-digit PIN shown on your PS3 screen to authorize the connection.
+8. Once paired, browse and launch your host games or desktop from the interactive App List menu!
 
 ---
 
-## Credits
+## Configuration Settings
 
-- **[Moonlight-QT](https://github.com/moonlight-stream/moonlight-qt)**: Core client logic, GameStream/Sunshine protocol handling, icon/graphics assets, and streaming implementation are directly adapted from Moonlight-QT.
+Settings are persisted across reboots in `/dev_hdd0/game/MNLT00001/USRDIR/config.ini`:
+
+| Setting | Default | Options | Description |
+| :--- | :--- | :--- | :--- |
+| **Host IP** | `192.168.1.X` | IPv4 Address | Target Sunshine / GameStream host IP. |
+| **Resolution** | 720p / 1080p | 16:9 (720p, 1080p) / 4:3 (XGA, SVGA) | Filtered dynamically based on active display aspect ratio. |
+| **Frame Rate** | 60 FPS | 30 FPS / 60 FPS | Target stream frame rate. |
+| **Bitrate** | 10.0 Mbps | 2.5, 5.0, 10.0, 12.5, 15.0 Mbps | Optimal throughput ceiling tailored for PS3 Ethernet stability. |
+| **Scaling Mode** | Adaptive Shader | Adaptive Shader (CAS / Box) / Legacy | High-quality shader filtering vs direct Tiny3D texture blit. |
+| **Mouse Mode** | Game Mode | Game Mode / Desktop Mode | Relative raw delta motion (3D camera) vs absolute 1:1 pointer. |
+| **RSX VSync** | VSync On | VSync (60 Hz) / HSync (Uncapped) | Hardware presentation sync mode. |
+| **Stats HUD** | Off | On / Off | Real-time on-screen telemetry overlay (0 overhead when off). |
+
+---
+
+## Credits & Acknowledgments
+
+- **[Moonlight-QT](https://github.com/moonlight-stream/moonlight-qt)**: Core client architecture, GameStream/Sunshine protocol handling, icon/graphics assets, and streaming implementation are adapted from Moonlight-QT.
 - **[Opus Interactive Audio Codec](https://opus-codec.org/)**: Audio decoding functionality is powered by the Opus codec library.
-- **[Moonlight Common C](https://github.com/moonlight-stream/moonlight-common-c)**: Common GameStream client library.
-
-## Acknowledgments & Special Thanks
-
+- **[Moonlight Common C](https://github.com/moonlight-stream/moonlight-common-c)**: Common GameStream client protocol library.
 - **[PS3DEV / PSL1GHT SDK](https://github.com/ps3dev/ps3dev)**: Enormous thanks to the open-source PS3 toolchain and PSL1GHT SDK developers whose foundational work, cross-compilers, hardware header definitions, and libraries made this PlayStation 3 port possible.
 - **[Mohammed Asif (mohasi)](https://codeberg.org/mohasi)**: Special thanks for technical guidance, problem-solving support, and project inspiration.
-- **AcidNT3.1**: Special thanks for testing and feedback during development.
-- **SyrianClippy**: Special thanks for testing and feedback during development.
-- **Okeanos**: Special thanks for testing and feedback during development.
+- **AcidNT3.1**: Testing, validation, and feedback during development.
+- **SyrianClippy**: Testing, validation, and feedback during development.
+- **Okeanos**: Testing, validation, and feedback during development.
 
 ---
 
 ## License
 
-This project is released under the GNU General Public License v3.0 (GPLv3).
+This project is licensed under the GNU General Public License v3.0 (GPLv3).

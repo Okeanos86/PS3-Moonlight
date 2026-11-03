@@ -23,7 +23,14 @@
 #include "ui.h"
 #include "video.h"
 #include "input.h"
+#if defined(ENABLE_PS3PERF) && (ENABLE_PS3PERF != 0)
 #include <ps3perf.h>
+#else
+/* Fallback no-op stubs when PS3-Debug-Toolkit is not enabled or not installed */
+static inline void ps3perf_init(void) {}
+static inline void ps3perf_shutdown(void) {}
+static inline void ps3perf_tick(uint32_t interval_seconds) { (void)interval_seconds; }
+#endif
 
 SYS_PROCESS_PARAM(1001, 0x100000)
 

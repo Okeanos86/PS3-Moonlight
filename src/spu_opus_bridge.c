@@ -18,7 +18,19 @@
 #include "spu_opus_bridge.h"
 #include "spu_opus.h"
 #include "net_logger.h"
+#if defined(ENABLE_PS3PERF) && (ENABLE_PS3PERF != 0)
 #include <ps3perf.h>
+#else
+/* Fallback no-op stubs when PS3-Debug-Toolkit is not enabled or not installed */
+static inline int ps3perf_register_spu(sys_spu_thread_t thread, const void *spu_elf) {
+    (void)thread;
+    (void)spu_elf;
+    return 0;
+}
+static inline void ps3perf_unregister_spu(sys_spu_thread_t thread) {
+    (void)thread;
+}
+#endif
 
 #define SPU_OPUS_BOUNCE_PCM_SIZE  (SPU_OPUS_MAX_SAMPLES * 2 * sizeof(float))
 #define SPU_OPUS_TIMEOUT_TB       1600000ULL /* ~20 ms at 79.8 MHz Timebase */
