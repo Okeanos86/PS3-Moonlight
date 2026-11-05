@@ -14,7 +14,8 @@ ICON0		:= ICON0.PNG
 SFOXML		:= sfo.xml
 SFOXML_DEBUG	:= sfo_debug.xml
 
-SDK_RELEASE	:= nightly-2026-10-12
+SDK_REPO	:= Cruslan/ps3dev
+SDK_RELEASE	:= nightly-2026-11-05
 HOST_OS		:= $(shell uname -s)
 HOST_ARCH	:= $(shell uname -m)
 
@@ -28,7 +29,7 @@ else
 $(error Unsupported build host: $(HOST_OS)-$(HOST_ARCH))
 endif
 
-SDK_URL		:= https://github.com/ps3dev/ps3dev/releases/download/$(SDK_RELEASE)/$(SDK_ASSET)
+SDK_URL		:= https://github.com/$(SDK_REPO)/releases/download/$(SDK_RELEASE)/$(SDK_ASSET)
 SDK_TAR		:= $(SDK_ASSET)
 
 -include $(PS3DEV)/ppu_rules

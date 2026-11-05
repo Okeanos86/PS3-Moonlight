@@ -53,11 +53,31 @@ cd PS3-Moonlight
 ```
 
 ### 2. Prepare the PS3 SDK Environment
-Download and extract the prebuilt official `ps3dev` SDK and PSL1GHT toolchain for your host operating system (macOS ARM64/x64 or Linux x64) directly into the project root directory (`./ps3dev`):
+
+Moonlight PS3 requires a PSL1GHT v2 toolchain with critical RSX command buffer and memory alignment patches. Running `make prepare` automatically downloads and extracts the pre-built, patched SDK and PSL1GHT toolchain from [Cruslan/ps3dev](https://github.com/Cruslan/ps3dev) (`nightly-2026-11-05`) for your host operating system (macOS ARM64/x64 or Linux x64) directly into the project root directory (`./ps3dev`):
+
 ```bash
 make prepare
 ```
-*(Note: If you already have a system-wide PS3 toolchain installed, you can simply export `export PS3DEV=/path/to/ps3dev` instead).*
+
+#### Why a Patched SDK?
+The toolchain distributed via [Cruslan/ps3dev](https://github.com/Cruslan/ps3dev) integrates vital stability fixes necessary for reliable hardware streaming:
+- **`PSL1GHT` RSX Fixes**: Fixes a pointer scaling overflow in `rsxSetupContextData`, wraps 64-bit procedure descriptors in `__get_opd32` for 32-bit callback loaders, sets the required `allowTex` (bit 15 / `0x8000`) control bit in `LoadFragmentProgramLocation` (preventing RSX GPU lockups), and bounds FIFO spin loops in `ResetCommandBuffer`.
+- **`Tiny3D` Hardware Alignment Fix**: Enforces `-mstrict-align` in Tiny3D to prevent GCC 13+ from emitting unaligned 64-bit `stdx` doubleword stores into RSX I/O memory, eliminating fatal Cell PPE hardware alignment traps (black screen DSI / Machine Check crashes).
+
+#### Using an Existing or Custom SDK (Manual Patching)
+If you already have a toolchain installed or prefer building upstream from source ([ps3dev/ps3dev](https://github.com/ps3dev/ps3dev)), you can apply these standalone patchsets manually from the [Cruslan/ps3dev patches layer](https://github.com/Cruslan/ps3dev/tree/main/patches):
+```bash
+# In your PSL1GHT repository checkout:
+git apply /path/to/ps3dev/patches/PSL1GHT/*.patch
+
+# In your ps3libraries repository checkout:
+git apply /path/to/ps3dev/patches/ps3libraries/*.patch
+```
+After building and installing the patched SDK into your preferred prefix, simply export `PS3DEV` before compiling:
+```bash
+export PS3DEV=/path/to/ps3dev
+```
 
 ### 3. Compile the Retail Package
 Build the optimized standalone Retail Release package:

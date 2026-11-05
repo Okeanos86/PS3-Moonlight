@@ -148,3 +148,10 @@ PlayStation 3 client for Moonlight Game Streaming protocol (NVIDIA Shield / Suns
   - `VDEC_FRAME_COUNT` increased from 4 to 6 in `src/video.c`, expanding `ready_queue` capacity from 1 frame to 3 frames to absorb transient RSX VSync phase shifts without frame drops.
   - On VDEC hardware queue saturation (`vdec_au_pending >= VDEC_BUF_COUNT`) or AU submission failure, `ps3_video_submit_decode_unit` returns `DR_NEED_IDR` instead of `DR_OK`, ensuring instant and clean host keyframe recovery without GOP corruption.
   - **Memory Budget**: Static systems consume $74.5\text{ MB}$; 6 buffers at 720p consume $24.0\text{ MB}$ (total $98.5\text{ MB}$), maintaining a comfortable **$114.5\text{ MB}$ free headroom** in the $213\text{ MB}$ user XDR RAM pool.
+
+## Portable Prebuilt Toolchain & SDK Provisioning
+- **Release Target (`nightly-2026-11-05`)**:
+  - Prebuilt SDK distribution pinned to `Cruslan/ps3dev` release `nightly-2026-11-05`.
+  - Integrates patched PSL1GHT v2 with RSX command-buffer stability fixes and tiny3d hardware alignment patches.
+  - Multi-platform host tarball support: macOS ARM64 (`ps3dev-macos-ARM64.tar.gz`), macOS x86_64 (`ps3dev-macos-X64.tar.gz`), and Linux x86_64 (`ps3dev-linux-X64.tar.gz`) automatically selected via `make prepare`.
+
